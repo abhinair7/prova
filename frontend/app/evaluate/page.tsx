@@ -28,31 +28,31 @@ const MODES: {
   color: string;
 }[] = [
   {
-    id: "vote",
-    label: "Vote on curated cases",
-    icon: Vote,
-    blurb: "We show expert-seeded tasks for your vertical. You judge — nothing of yours is uploaded.",
-    privacy: "Zero data leaves your device.",
+    id: "mask",
+    label: "Mask & test",
+    icon: EyeOff,
+    blurb: "Upload your task — client-side NER strips PII (names, MRNs, tickers, account numbers) before send. You approve the redaction diff first.",
+    privacy: "Redacted version only.",
     status: "live",
-    color: "#10B981",
+    color: "#06B6D4",
   },
   {
     id: "synthesize",
     label: "Synthesize & test",
     icon: Wand2,
-    blurb: "On-device model rewrites your task into a structurally equivalent one with all identifying details swapped.",
+    blurb: "Upload your task — an on-device model rewrites it into a structurally equivalent one with all identifying details swapped.",
     privacy: "We never see the original.",
     status: "beta",
     color: "#A78BFA",
   },
   {
-    id: "mask",
-    label: "Mask & test",
-    icon: EyeOff,
-    blurb: "Client-side NER strips PII (names, MRNs, tickers, account numbers) before send. You approve the diff first.",
-    privacy: "Redacted version only.",
+    id: "vote",
+    label: "Vote on curated cases",
+    icon: Vote,
+    blurb: "Skip the upload entirely — we show expert-seeded tasks for your vertical. You just judge which output is best.",
+    privacy: "Zero data leaves your device.",
     status: "live",
-    color: "#06B6D4",
+    color: "#10B981",
   },
   {
     id: "local",
@@ -337,7 +337,9 @@ export default function EvaluatePage() {
   const [file, setFile] = useState<File | null>(null);
   const [verticalId, setVerticalId] = useState<string>("finance");
   const [query, setQuery] = useState("");
-  const [mode, setMode] = useState<Mode>("vote");
+  // Default to "mask" so the upload zone is visible immediately — that's what most
+  // first-time visitors expect when they land on /evaluate. The Vote mode is one click away.
+  const [mode, setMode] = useState<Mode>("mask");
   const [slate, setSlate] = useState<Slate>(5);
 
   const vertical = useMemo(
@@ -537,7 +539,14 @@ export default function EvaluatePage() {
                     <div className="mb-5 p-3 rounded-xl bg-[rgba(16,185,129,0.06)] border border-[rgba(16,185,129,0.18)]">
                       <p className="text-xs text-[#94A3B8]">
                         <span className="text-white font-medium">No upload needed.</span>{" "}
-                        We'll show you a curated case from the {vertical.name} benchmark when you click Run. Just judge which output is best.
+                        We'll show you a curated case from the {vertical.name} benchmark when you click Run. Just judge which output is best.{" "}
+                        <button
+                          type="button"
+                          onClick={() => setMode("mask")}
+                          className="text-[#06B6D4] hover:text-white underline underline-offset-2 transition-colors"
+                        >
+                          Want to upload your own task instead?
+                        </button>
                       </p>
                     </div>
                   )}
@@ -593,7 +602,18 @@ export default function EvaluatePage() {
 
                   {/* Upload + textarea — only when the chosen mode actually needs the user's task */}
                   {requiresUpload && (
-                    <>
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="block text-xs font-medium text-[#94A3B8]">
+                          Your work · drop a file or paste a task
+                        </label>
+                        <span className="text-[10px] text-[#475569]">
+                          {mode === "mask"
+                            ? "Will be PII-masked client-side before send"
+                            : "Will be rewritten on-device before send"}
+                        </span>
+                      </div>
+
                       <UploadZone onFile={handleFile} />
 
                       {file && (
@@ -623,7 +643,7 @@ export default function EvaluatePage() {
                         rows={4}
                         className="w-full bg-[rgba(255,255,255,0.03)] border border-[rgba(255,255,255,0.08)] rounded-xl p-4 text-sm text-white placeholder:text-[#475569] resize-none focus:outline-none focus:border-[rgba(124,58,237,0.4)] transition-colors"
                       />
-                    </>
+                    </div>
                   )}
 
                   {/* Run button */}
