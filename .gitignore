@@ -50,6 +50,7 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
+~$*           # Microsoft Word / Office lock files
 
 # ── Logs / runtime ────────────────────────────────────────────────────────────
 *.log
