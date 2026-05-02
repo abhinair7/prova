@@ -1,0 +1,258 @@
+@import "tailwindcss";
+
+:root {
+  --brand-purple: #7C3AED;
+  --brand-purple-light: #A78BFA;
+  --brand-cyan: #06B6D4;
+  --brand-cyan-light: #67E8F9;
+  --brand-gold: #F59E0B;
+
+  --surface-0: #000000;
+  --surface-1: #080810;
+  --surface-2: #0D0D1A;
+  --surface-3: #12121F;
+  --surface-4: #1A1A2E;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 80px;
+}
+
+body {
+  background: var(--surface-0);
+  color: #ffffff;
+  font-family: var(--font-geist-sans, system-ui, sans-serif);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* ── Scrollbar ─────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--surface-1);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(124, 58, 237, 0.4);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(124, 58, 237, 0.7);
+}
+
+/* ── Text selection ─────────────────────────── */
+::selection {
+  background: rgba(124, 58, 237, 0.35);
+  color: #fff;
+}
+
+/* ── Gradient text ──────────────────────────── */
+.text-gradient-purple {
+  background: linear-gradient(135deg, #A78BFA 0%, #7C3AED 50%, #06B6D4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-gold {
+  background: linear-gradient(135deg, #FCD34D 0%, #F59E0B 60%, #D97706 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gradient-cyan {
+  background: linear-gradient(135deg, #67E8F9 0%, #06B6D4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Glass morphism ─────────────────────────── */
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.glass-purple {
+  background: rgba(124, 58, 237, 0.06);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(124, 58, 237, 0.2);
+}
+
+.glass-cyan {
+  background: rgba(6, 182, 212, 0.06);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(6, 182, 212, 0.2);
+}
+
+/* ── Glow effects ───────────────────────────── */
+.glow-purple {
+  box-shadow: 0 0 40px rgba(124, 58, 237, 0.3), 0 0 80px rgba(124, 58, 237, 0.1);
+}
+
+.glow-cyan {
+  box-shadow: 0 0 40px rgba(6, 182, 212, 0.3), 0 0 80px rgba(6, 182, 212, 0.1);
+}
+
+.glow-gold {
+  box-shadow: 0 0 40px rgba(245, 158, 11, 0.3), 0 0 80px rgba(245, 158, 11, 0.1);
+}
+
+/* ── Noise texture overlay ──────────────────── */
+.noise::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  opacity: 0.4;
+  mix-blend-mode: overlay;
+}
+
+/* ── Grid background pattern ────────────────── */
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(124, 58, 237, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124, 58, 237, 0.05) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* ── Animated border gradient ───────────────── */
+.border-gradient {
+  position: relative;
+}
+.border-gradient::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.6), rgba(6, 182, 212, 0.3), rgba(124, 58, 237, 0.1));
+  z-index: -1;
+  animation: borderRotate 4s linear infinite;
+}
+
+@keyframes borderRotate {
+  0% { filter: hue-rotate(0deg); }
+  100% { filter: hue-rotate(360deg); }
+}
+
+/* ── Shine shimmer ──────────────────────────── */
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 60%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.06),
+    transparent
+  );
+  animation: shimmerMove 3s infinite;
+}
+@keyframes shimmerMove {
+  0% { left: -100%; }
+  100% { left: 200%; }
+}
+
+/* ── Score bar animation ────────────────────── */
+@keyframes scoreBarFill {
+  from { width: 0; }
+  to { width: var(--score-width); }
+}
+.score-bar {
+  animation: scoreBarFill 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ── Floating orbs ──────────────────────────── */
+.orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+/* ── Fade animations ────────────────────────── */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ── Pulsing dot ────────────────────────────── */
+@keyframes livePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+.live-dot {
+  animation: livePulse 1.5s ease-in-out infinite;
+}
+
+/* ── Card hover lift ────────────────────────── */
+.card-hover {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.3s ease;
+}
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 20px 60px rgba(124, 58, 237, 0.2), 0 0 0 1px rgba(124, 58, 237, 0.2);
+}
+
+/* ── Progress bar ───────────────────────────── */
+.progress-track {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 1s cubic-bezier(0.16, 1, 0.3, 1);
+}
