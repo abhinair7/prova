@@ -31,7 +31,8 @@ This repo contains both the **frontend** (Next.js 15 / React 19 / Tailwind) and 
 - **24 verticals** (Legal · Healthcare · Finance · Engineering · 20 more), each with its own leaderboard, evaluator pool, and Prova Composite Index (PCI).
 - **127 benchmarked models** — frontier (Claude / GPT / Gemini / Llama / Mistral / Cohere) plus open-source and vertical specialists.
 - **11 public benchmark adapters** (ARC AGI 2 · MMLU · GSM8K · HumanEval · SWE-Bench · TruthfulQA · GPQA Diamond · Terminal Bench 2 · Humanity's Last Exam · Browser Call · MCP Atlas) wired into a unified composite scorer.
-- **5 modes of participation**: Vote on curated cases · Synthesize & test · Mask & test · Local mode (BYO key) · Enterprise tenant.
+- **5 modes of participation**: Mask & test · Synthesize & test · Vote on curated cases · **Browser sandbox · BYO key (real model calls direct from your browser, never via Prova)** · Enterprise tenant.
+- **Task-deterministic scoring** — different tasks in the same vertical produce different rankings (hash of the query seeds per-(model, task) score perturbation).
 - **Verified-professional sign-in flow** wired to a real waitlist API + JSON store (idempotent on email).
 - **Shareable scorecards** at `/scorecard/[id]` with auto-generated **OG images** for LinkedIn previews.
 - **Live profession counter** on the landing — real-time signups per vertical from the waitlist.
@@ -312,7 +313,7 @@ See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for the full system map: directory tr
 - [ ] Real backend integration on `/evaluate` (currently shows seeded results)
 
 ### v2 (post-launch)
-- [ ] Desktop app for **Local mode (BYO key)**
+- [ ] Desktop app — extends Browser sandbox to local-model inference (Ollama / WebLLM)
 - [ ] Methodology audit (target: Big 4 attestation)
 - [ ] Agent listing + certification flow
 - [ ] Data-licensing API for AI labs

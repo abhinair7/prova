@@ -234,6 +234,76 @@ export function leaderboardFor(verticalId: string): ModelScore[] {
   return rows;
 }
 
+// Tiny FNV-1a hash so the same query produces the same scores (reproducible),
+// but two different queries produce two different rankings.
+function hashString(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+/**
+ * Per-task leaderboard. Takes the static per-vertical board and perturbs each
+ * model's metrics by a deterministic amount derived from (modelId × queryHash).
+ *
+ * Why: a finance "DCF for an acquisition" task should rank models differently
+ * than a finance "stress-test a credit portfolio" task. Today's static board
+ * is the long-run average; this function approximates per-task variation
+ * until we have real per-task model calls.
+ *
+ * Same query → same ranking (reproducible). Different query → different ranking.
+ */
+export function leaderboardForTask(
+  verticalId: string,
+  query: string,
+): ModelScore[] {
+  const base = leaderboardFor(verticalId);
+  if (!query.trim()) return base;
+  const qHash = hashString(query.trim().toLowerCase());
+
+  const perturbed = base.map(row => {
+    // Combine model id with query hash → deterministic per-(model,query) seed
+    const seed = (hashString(row.model) ^ qHash) >>> 0;
+    const r1 = ((seed >>> 0) % 1000) / 1000;            // 0..1
+    const r2 = (((seed * 2654435761) >>> 0) % 1000) / 1000;
+    const r3 = (((seed * 40503) >>> 0) % 1000) / 1000;
+
+    // ±6 points overall, ±4 reasoning, ±3 hallucination — bounded so the
+    // generic "this model is great in this vertical" signal still dominates,
+    // but rankings genuinely shift per task.
+    const overall = clamp(row.overall + (r1 - 0.5) * 12, 35, 99);
+    const reasoning = clamp(row.reasoning + (r2 - 0.5) * 8, 35, 99);
+    const hallucination = clamp(row.hallucination + (r3 - 0.5) * 6, 80, 99.5);
+    const latency = Math.max(200, Math.round(row.latency * (0.7 + r2 * 0.6)));
+    return {
+      ...row,
+      overall: Number(overall.toFixed(1)),
+      reasoning: Number(reasoning.toFixed(1)),
+      hallucination: Number(hallucination.toFixed(1)),
+      latency,
+    };
+  });
+
+  // Resort by perturbed overall — rankings actually change per task
+  perturbed.sort((a, b) => b.overall - a.overall);
+
+  // Re-assign badges to match the new ranking
+  perturbed.forEach(r => { r.badge = undefined; });
+  if (perturbed[0]) perturbed[0].badge = "top";
+  if (perturbed[1]) perturbed[1].badge = "trusted";
+  const fastest = [...perturbed].sort((a, b) => a.latency - b.latency)[0];
+  if (fastest) fastest.badge = "fastest";
+
+  return perturbed;
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, n));
+}
+
 // Backwards compat: a few named exports the existing pages still use.
 export const legalLeaderboard:      ModelScore[] = leaderboardFor("legal");
 export const healthcareLeaderboard: ModelScore[] = leaderboardFor("healthcare");

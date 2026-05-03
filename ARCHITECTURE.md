@@ -158,8 +158,9 @@ frontend/
 | `/models`    | Text      | Free text on name + provider + family | controlled input |
 | `/benchmark` | Vertical  | 24 vertical tabs | from `verticals[]` |
 | `/benchmark` | Text      | Filter rows by model/provider | controlled input |
-| `/evaluate`  | Mode      | Vote · Synthesize · Mask · Local (App·Q3) · Enterprise | hardcoded |
-| `/evaluate`  | Slate     | Top 5 · Top 10 · Top 25 · All frontier | hardcoded |
+| `/evaluate`  | Mode      | Mask · Synthesize · Vote · Browser sandbox (BYO key) · Enterprise | hardcoded |
+| `/evaluate`  | Slate     | Top 5 · Top 10 · Top 25 · All frontier (mock modes only) | hardcoded |
+| `/evaluate`  | API key   | OpenAI / Anthropic / Google (sandbox mode only · localStorage · never POSTed) | localStorage |
 | `/evaluate`  | Vertical  | 24 vertical pills | from `verticals[]` |
 | `/profile`   | Vertical  | 24 vertical pills | from `verticals[]`, deep-linkable via `?vertical=` |
 | `/profile`   | Credential| Per-vertical input (NPI / Bar / CRD / NPN / CPA …) | derived from vertical |

@@ -1,21 +1,26 @@
 "use client";
-import { useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useDropzone } from "react-dropzone";
 import {
   Upload, FileText, X, ChevronRight, Loader2,
   CheckCircle, Copy, Share2, Shield, Zap,
   Vote, Wand2, EyeOff, Cpu, Building2, Lock,
+  Eye, EyeOff as EyeOffIcon, KeyRound, AlertCircle,
 } from "lucide-react";
 import { Navbar } from "@/components/landing/Navbar";
 import { Footer } from "@/components/landing/Footer";
 import { GlowButton } from "@/components/ui/GlowButton";
 import { Badge } from "@/components/ui/Badge";
 import { scoreColor } from "@/lib/utils";
-import { verticals as ALL_VERTICALS, leaderboardFor } from "@/lib/data";
+import { verticals as ALL_VERTICALS, leaderboardFor, leaderboardForTask } from "@/lib/data";
+import {
+  SANDBOX_MODELS, loadKey, saveKey, hasKeyFor, runSandbox,
+  type SandboxProvider, type SandboxCallResult,
+} from "@/lib/sandbox";
 
 type Step = "upload" | "running" | "results";
-type Mode = "vote" | "synthesize" | "mask" | "local" | "enterprise";
+type Mode = "vote" | "synthesize" | "mask" | "sandbox" | "enterprise";
 type Slate = 5 | 10 | 25 | 50;
 
 const MODES: {
@@ -24,7 +29,7 @@ const MODES: {
   icon: typeof Vote;
   blurb: string;
   privacy: string;
-  status: "live" | "beta" | "soon" | "request";
+  status: "live" | "beta" | "request";
   color: string;
 }[] = [
   {
@@ -55,12 +60,12 @@ const MODES: {
     color: "#10B981",
   },
   {
-    id: "local",
-    label: "Local mode (BYO key)",
+    id: "sandbox",
+    label: "Browser sandbox · BYO key",
     icon: Cpu,
-    blurb: "Desktop / browser-extension app — runs models from your own keys, only the vote returns to Prova. Reserve a slot in the waitlist.",
-    privacy: "Document never leaves your machine.",
-    status: "soon",
+    blurb: "Real model calls go directly from your browser to OpenAI / Anthropic / Google using your own API key. Prova never sees your prompt, your output, or your key.",
+    privacy: "Zero round-trip through Prova servers.",
+    status: "live",
     color: "#F59E0B",
   },
   {
@@ -150,7 +155,9 @@ const FALLBACK_TEMPLATE = (vertical: string) => [
 ];
 
 function buildResults(verticalId: string, query: string, slate: Slate): ModelResult[] {
-  const board = leaderboardFor(verticalId).slice(0, slate);
+  // Per-task ranking: hash(query) seeds per-(model, query) score perturbation,
+  // so different tasks produce different rankings even within the same vertical.
+  const board = leaderboardForTask(verticalId, query).slice(0, slate);
   if (board.length === 0) return [];
   const v = ALL_VERTICALS.find(x => x.id === verticalId);
   const templates = OUTPUT_TEMPLATES[verticalId] ?? FALLBACK_TEMPLATE(v?.name ?? "this");
@@ -332,6 +339,122 @@ function ResultCard({
   );
 }
 
+// ── Sandbox result card — real outputs + real latency + real cost ───────────
+function SandboxResultCard({ result }: { result: SandboxCallResult }) {
+  const ok = result.ok;
+  const cost = result.usage?.totalCostUsd;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className={`rounded-2xl border p-4 ${ok ? "border-[rgba(74,222,128,0.18)] bg-[rgba(74,222,128,0.03)]" : "border-[rgba(248,113,113,0.20)] bg-[rgba(248,113,113,0.04)]"}`}
+    >
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <p className="text-sm font-semibold text-white">{result.model.label}</p>
+          <p className="text-[11px] text-[#64748B] capitalize">
+            {result.model.provider} · live · {result.latencyMs}ms
+            {result.usage?.input !== undefined && (
+              <> · in {result.usage.input}/out {result.usage.output} tokens</>
+            )}
+            {cost !== undefined && <> · ~${cost.toFixed(5)}</>}
+          </p>
+        </div>
+        {ok ? (
+          <Badge variant="green"><Shield className="w-3 h-3" /> sandbox</Badge>
+        ) : (
+          <Badge variant="red"><AlertCircle className="w-3 h-3" /> error</Badge>
+        )}
+      </div>
+      {ok ? (
+        <div className="p-3 rounded-xl bg-[rgba(0,0,0,0.30)] border border-[rgba(255,255,255,0.04)]">
+          <p className="text-xs text-[#94A3B8] leading-relaxed whitespace-pre-wrap line-clamp-[12]">
+            {result.output || "(empty response)"}
+          </p>
+        </div>
+      ) : (
+        <p className="text-xs text-[#F87171]">{result.errorMessage}</p>
+      )}
+    </motion.div>
+  );
+}
+
+// ── Sandbox-mode key form ─────────────────────────────────────────────────────
+// Keys are kept in localStorage and read directly by lib/sandbox.ts.
+// They are NEVER POSTed to Prova's server.
+function SandboxKeyForm({ onChange }: { onChange: () => void }) {
+  const [openai, setOpenai] = useState("");
+  const [anthropic, setAnthropic] = useState("");
+  const [google, setGoogle] = useState("");
+  const [reveal, setReveal] = useState<Record<SandboxProvider, boolean>>({
+    openai: false, anthropic: false, google: false,
+  });
+
+  useEffect(() => {
+    setOpenai(loadKey("openai"));
+    setAnthropic(loadKey("anthropic"));
+    setGoogle(loadKey("google"));
+  }, []);
+
+  function persist(p: SandboxProvider, v: string) {
+    saveKey(p, v);
+    onChange();
+  }
+
+  const fields: { p: SandboxProvider; label: string; placeholder: string; value: string; setter: (v: string) => void; href: string }[] = [
+    { p: "openai",    label: "OpenAI",    placeholder: "sk-…",         value: openai,    setter: setOpenai,    href: "https://platform.openai.com/api-keys" },
+    { p: "anthropic", label: "Anthropic", placeholder: "sk-ant-…",     value: anthropic, setter: setAnthropic, href: "https://console.anthropic.com/settings/keys" },
+    { p: "google",    label: "Google",    placeholder: "AIza…",        value: google,    setter: setGoogle,    href: "https://aistudio.google.com/app/apikey" },
+  ];
+
+  return (
+    <div className="mb-5 p-4 rounded-xl bg-[rgba(245,158,11,0.06)] border border-[rgba(245,158,11,0.20)] space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-medium text-white flex items-center gap-1.5">
+            <KeyRound className="w-3.5 h-3.5 text-[#F59E0B]" /> Bring your own API keys
+          </p>
+          <p className="text-[11px] text-[#94A3B8] mt-0.5 leading-relaxed">
+            Stored in your browser's localStorage. Calls go directly from your browser to each provider. <span className="text-[#F59E0B]">Prova never sees them.</span>
+          </p>
+        </div>
+      </div>
+
+      {fields.map(({ p, label, placeholder, value, setter, href }) => (
+        <div key={p} className="flex items-center gap-2">
+          <label className="text-[11px] text-[#94A3B8] w-20 flex-shrink-0">{label}</label>
+          <div className="flex-1 flex items-center gap-1.5">
+            <input
+              type={reveal[p] ? "text" : "password"}
+              value={value}
+              onChange={(e) => { setter(e.target.value); persist(p, e.target.value); }}
+              placeholder={placeholder}
+              autoComplete="off"
+              spellCheck={false}
+              className="flex-1 bg-[rgba(0,0,0,0.30)] border border-[rgba(255,255,255,0.08)] rounded-lg px-2.5 py-1.5 text-xs font-mono text-white placeholder:text-[#475569] focus:outline-none focus:border-[rgba(245,158,11,0.45)] transition-colors"
+            />
+            <button
+              type="button"
+              onClick={() => setReveal(r => ({ ...r, [p]: !r[p] }))}
+              className="text-[#475569] hover:text-white p-1.5"
+              aria-label={reveal[p] ? "Hide key" : "Show key"}
+            >
+              {reveal[p] ? <EyeOffIcon className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+          <a href={href} target="_blank" rel="noopener noreferrer" className="text-[10px] text-[#06B6D4] hover:text-white whitespace-nowrap">
+            Get key →
+          </a>
+        </div>
+      ))}
+
+      <p className="text-[10px] text-[#475569] pt-2 border-t border-[rgba(245,158,11,0.15)]">
+        These keys never touch Prova's server. <button type="button" onClick={() => { saveKey("openai",""); saveKey("anthropic",""); saveKey("google",""); setOpenai(""); setAnthropic(""); setGoogle(""); onChange(); }} className="underline underline-offset-2 hover:text-white">Clear all keys</button>
+      </p>
+    </div>
+  );
+}
+
 export default function EvaluatePage() {
   const [step, setStep] = useState<Step>("upload");
   const [file, setFile] = useState<File | null>(null);
@@ -341,37 +464,72 @@ export default function EvaluatePage() {
   // first-time visitors expect when they land on /evaluate. The Vote mode is one click away.
   const [mode, setMode] = useState<Mode>("mask");
   const [slate, setSlate] = useState<Slate>(5);
+  const [keysVersion, setKeysVersion] = useState(0); // bump to re-eval canRun after key edits
+  const [sandboxResults, setSandboxResults] = useState<SandboxCallResult[] | null>(null);
+  const [sandboxRunning, setSandboxRunning] = useState(false);
+  const sandboxAbort = useRef<AbortController | null>(null);
 
   const vertical = useMemo(
     () => ALL_VERTICALS.find(v => v.id === verticalId) ?? ALL_VERTICALS[0],
     [verticalId],
   );
 
-  const results = useMemo(
+  // Mock results for non-sandbox modes (vote/synthesize/mask)
+  const mockResults = useMemo(
     () => (step === "running" || step === "results" ? buildResults(verticalId, query, slate) : []),
     [verticalId, query, step, slate],
   );
 
   const runningModels = useMemo(
     () =>
-      leaderboardFor(verticalId)
+      leaderboardForTask(verticalId, query)
         .slice(0, Math.min(slate, 8))
         .map((row, i) => ({ name: row.model, color: MODEL_PALETTE[i % MODEL_PALETTE.length] })),
-    [verticalId, slate],
+    [verticalId, query, slate],
   );
 
-  const requiresUpload = mode === "synthesize" || mode === "mask";
+  // Pick which models to call in sandbox mode based on which keys the user has set
+  const sandboxModels = useMemo(() => {
+    void keysVersion; // re-evaluate when keys change
+    return SANDBOX_MODELS.filter(m => hasKeyFor(m.provider));
+  }, [keysVersion]);
+
+  const requiresUpload = mode === "synthesize" || mode === "mask" || mode === "sandbox";
   const canRun =
     mode === "vote" ||
-    (requiresUpload && (file !== null || query.trim().length > 0));
+    (mode === "sandbox" && sandboxModels.length > 0 && (file !== null || query.trim().length > 0)) ||
+    (mode !== "sandbox" && requiresUpload && (file !== null || query.trim().length > 0));
 
   function handleFile(f: File) {
     setFile(f);
   }
 
-  function handleRun() {
+  async function handleRun() {
     if (!canRun) return;
     setStep("running");
+    setSandboxResults(null);
+
+    if (mode === "sandbox") {
+      // Real browser-direct calls
+      const prompt = query.trim() || `Sample ${vertical.name.toLowerCase()} task for evaluation.`;
+      sandboxAbort.current?.abort();
+      const ctrl = new AbortController();
+      sandboxAbort.current = ctrl;
+      setSandboxRunning(true);
+      const partial: SandboxCallResult[] = [];
+      try {
+        await runSandbox(prompt, sandboxModels, ctrl.signal, (r) => {
+          partial.push(r);
+          setSandboxResults([...partial]);
+        });
+      } finally {
+        setSandboxRunning(false);
+        setStep("results");
+      }
+      return;
+    }
+
+    // Mock path for vote/synthesize/mask
     setTimeout(() => setStep("results"), 3500);
   }
 
@@ -481,16 +639,14 @@ export default function EvaluatePage() {
                                   color:
                                     m.status === "live" ? "#4ADE80"
                                       : m.status === "beta" ? "#FBBF24"
-                                      : m.status === "soon" ? "#06B6D4"
                                       : "#94A3B8",
                                   background:
                                     m.status === "live" ? "rgba(74,222,128,0.10)"
                                       : m.status === "beta" ? "rgba(251,191,36,0.10)"
-                                      : m.status === "soon" ? "rgba(6,182,212,0.10)"
                                       : "rgba(148,163,184,0.10)",
                                 }}
                               >
-                                {m.status === "soon" ? "App · Q3" : m.status}
+                                {m.status}
                               </span>
                             </div>
                             <p className="text-xs font-semibold text-white mb-1">{m.label}</p>
@@ -558,14 +714,8 @@ export default function EvaluatePage() {
                       </p>
                     </div>
                   )}
-                  {mode === "local" && (
-                    <div className="mb-5 p-3 rounded-xl bg-[rgba(245,158,11,0.06)] border border-[rgba(245,158,11,0.20)]">
-                      <p className="text-xs text-[#94A3B8]">
-                        <span className="text-white font-medium">App, coming Q3 2026.</span>{" "}
-                        For workflows where the document can never leave your machine, the desktop app is the right fit.{" "}
-                        <a href="/profile?signin=linkedin" className="text-[#F59E0B] hover:underline">Reserve a spot from your profile →</a>
-                      </p>
-                    </div>
+                  {mode === "sandbox" && (
+                    <SandboxKeyForm onChange={() => setKeysVersion(v => v + 1)} />
                   )}
                   {mode === "enterprise" && (
                     <div className="mb-5 p-3 rounded-xl bg-[rgba(236,72,153,0.06)] border border-[rgba(236,72,153,0.20)]">
@@ -647,23 +797,25 @@ export default function EvaluatePage() {
                   )}
 
                   {/* Run button */}
-                  <div className="mt-5 flex items-center justify-between">
+                  <div className="mt-5 flex items-center justify-between gap-3">
                     <p className="text-[11px] text-[#475569]">
                       {mode === "vote" && "We'll seed a curated case from the benchmark."}
                       {mode === "synthesize" && "Your task will be rewritten on-device before send."}
                       {mode === "mask" && "PII is stripped client-side. You'll approve the diff first."}
-                      {mode === "local" && "Models run via your own keys. We never see the document."}
+                      {mode === "sandbox" && (sandboxModels.length === 0
+                        ? "Add at least one API key above to enable real model calls."
+                        : `${sandboxModels.length} model${sandboxModels.length === 1 ? "" : "s"} ready · calls go directly from your browser to the providers' APIs.`)}
                       {mode === "enterprise" && "Talk to us about a tenant-isolated deployment."}
                     </p>
                     <GlowButton
                       onClick={handleRun}
-                      disabled={!canRun || mode === "enterprise" || mode === "local"}
+                      disabled={!canRun || mode === "enterprise" || sandboxRunning}
                       size="lg"
                     >
                       {mode === "enterprise"
                         ? "Request access"
-                        : mode === "local"
-                        ? "Reserve app slot"
+                        : mode === "sandbox"
+                        ? (sandboxRunning ? "Calling…" : `Run ${sandboxModels.length} live`)
                         : `Run ${slate} models`}
                       <ChevronRight className="w-4 h-4" />
                     </GlowButton>
@@ -683,9 +835,71 @@ export default function EvaluatePage() {
                 </motion.div>
               )}
 
-              {step === "results" && (
+              {step === "results" && mode === "sandbox" && (
                 <motion.div
-                  key="results"
+                  key="results-sandbox"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="p-6"
+                >
+                  <div className="mb-5 p-3 rounded-xl bg-[rgba(74,222,128,0.06)] border border-[rgba(74,222,128,0.20)]">
+                    <p className="text-xs text-[#94A3B8] flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5 text-[#4ADE80] flex-shrink-0" />
+                      <span>
+                        <span className="text-white font-medium">Ran in your browser sandbox.</span>{" "}
+                        {sandboxResults?.length ?? 0} live model call{(sandboxResults?.length ?? 0) === 1 ? "" : "s"} sent directly to the providers' APIs from this device. Prova never saw your prompt, output, or key.
+                      </span>
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">Your sandbox results</h3>
+                      <p className="text-xs text-[#64748B] mt-0.5">
+                        {vertical.name} · live from your browser · vote on the winner to feed Prova's signal
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    {(sandboxResults ?? []).map((r) => (
+                      <SandboxResultCard key={r.model.id} result={r} />
+                    ))}
+                  </div>
+
+                  {sandboxResults && sandboxResults.some(r => r.ok) && (
+                    <div className="mt-6 p-4 rounded-xl bg-[rgba(124,58,237,0.06)] border border-[rgba(124,58,237,0.2)]">
+                      <p className="text-sm text-[#94A3B8]">
+                        <span className="text-white font-medium">Cast your vote.</span>{" "}
+                        Which output was most useful for this {vertical.name.toLowerCase()} task? Verified-pro votes are what make the {vertical.name} AI Index meaningful.
+                      </p>
+                      <div className="flex flex-wrap gap-2 mt-3">
+                        {sandboxResults.filter(r => r.ok).map((r) => (
+                          <button
+                            key={r.model.id}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] hover:bg-[rgba(124,58,237,0.2)] hover:border-[rgba(124,58,237,0.4)] transition-all"
+                          >
+                            Vote {r.model.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-4 text-center">
+                    <button
+                      onClick={() => { setStep("upload"); setFile(null); setQuery(""); setSandboxResults(null); }}
+                      className="text-sm text-[#475569] hover:text-white transition-colors"
+                    >
+                      ← Run another task
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
+              {step === "results" && mode !== "sandbox" && (
+                <motion.div
+                  key="results-mock"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   className="p-6"
@@ -696,7 +910,7 @@ export default function EvaluatePage() {
                         Your personalized scorecard
                       </h3>
                       <p className="text-xs text-[#64748B] mt-0.5">
-                        {vertical.name} · {results.length} models evaluated · vote to improve rankings
+                        {vertical.name} · {mockResults.length} models scored for this task · vote to improve rankings
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -711,8 +925,15 @@ export default function EvaluatePage() {
                     </div>
                   </div>
 
+                  <div className="mb-4 p-3 rounded-xl bg-[rgba(6,182,212,0.05)] border border-[rgba(6,182,212,0.15)]">
+                    <p className="text-[11px] text-[#94A3B8]">
+                      <span className="text-[#06B6D4] font-medium">Per-task ranking.</span>{" "}
+                      Scores below are seeded from each model's offline PCI for {vertical.name.toLowerCase()}, then perturbed by the hash of your task — so a different task in the same vertical produces a different ranking. Real per-task ranking comes from your vote (and from running the task in <button type="button" onClick={() => setMode("sandbox")} className="underline underline-offset-2 hover:text-white">Browser sandbox mode</button>).
+                    </p>
+                  </div>
+
                   <div className="space-y-4">
-                    {results.map((r, i) => (
+                    {mockResults.map((r, i) => (
                       <ResultCard
                         key={r.model}
                         result={r}
@@ -729,7 +950,7 @@ export default function EvaluatePage() {
                       updates the {vertical.name} AI Index in real time.
                     </p>
                     <div className="flex gap-2 mt-3">
-                      {results.map((r) => (
+                      {mockResults.map((r) => (
                         <button
                           key={r.model}
                           className="px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-[rgba(255,255,255,0.06)] border border-[rgba(255,255,255,0.1)] hover:bg-[rgba(124,58,237,0.2)] hover:border-[rgba(124,58,237,0.4)] transition-all"
